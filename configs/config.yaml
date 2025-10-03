@@ -1,0 +1,21 @@
+telegram:
+  token: "${TELEGRAM_BOT_TOKEN}"
+
+rabbitmq:
+  url: "${RABBITMQ_URL}"
+
+speechkit:
+  folder_id: "${YANDEX_FOLDER_ID}"
+  api_key: "${YANDEX_API_KEY}"
+
+postgres:
+  dsn: "${POSTGRES_DSN}"
+
+s3:
+  endpoint: "${S3_ENDPOINT}"
+  access_key: "${S3_ACCESS_KEY}"
+  secret_key: "${S3_SECRET_KEY}"
+  bucket: "${S3_BUCKET}"
+
+worker:
+  concurrency: ${WORKER_CONCURRENCY}
