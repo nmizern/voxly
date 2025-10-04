@@ -42,12 +42,13 @@ func (c *Client) StartRecognition(s3URI string) (string, error) {
 		Config: RecognitionConfig{
 			Specification: Specification{
 				LanguageCode:      "ru-RU",
-				Model:             "general",
+				Model:             "general:rc",
 				AudioEncoding:     "OGG_OPUS",
 				SampleRateHertz:   48000,
 				AudioChannelCount: 1,
 				ProfanityFilter:   false,
-				LiteratureText:    false,
+				LiteratureText:    true,
+				RawResults:        false,
 			},
 		},
 		Audio: AudioSource{

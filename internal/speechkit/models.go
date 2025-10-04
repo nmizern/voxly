@@ -20,6 +20,7 @@ type Specification struct {
 	AudioChannelCount int    `json:"audioChannelCount"`
 	ProfanityFilter   bool   `json:"profanityFilter"`
 	LiteratureText    bool   `json:"literatureText"`
+	RawResults        bool   `json:"rawResults,omitempty"`
 }
 
 // AudioSource specifies location of audio file
