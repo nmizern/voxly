@@ -83,6 +83,40 @@ func (m *MockSpeechKit) WaitForResult(operationID string) (*speechkit.Recognitio
 	return args.Get(0).(*speechkit.RecognitionResult), args.Error(1)
 }
 
+type MockCache struct {
+	mock.Mock
+}
+
+func (m *MockCache) Get(ctx context.Context, key string, dest interface{}) error {
+	args := m.Called(ctx, key, dest)
+	return args.Error(0)
+}
+
+func (m *MockCache) Set(ctx context.Context, key string, value interface{}) error {
+	args := m.Called(ctx, key, value)
+	return args.Error(0)
+}
+
+func (m *MockCache) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	args := m.Called(ctx, key, value, ttl)
+	return args.Error(0)
+}
+
+func (m *MockCache) Delete(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+
+func (m *MockCache) Exists(ctx context.Context, key string) (bool, error) {
+	args := m.Called(ctx, key)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockCache) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func TestProcessor_HandleTaskError(t *testing.T) {
 	mockDB := new(MockDB)
 	ctx := context.Background()

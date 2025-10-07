@@ -11,6 +11,7 @@ import (
 	"voxly/internal/queue"
 	"voxly/internal/speechkit"
 	"voxly/internal/storage"
+	"voxly/pkg/cache"
 	"voxly/pkg/logger"
 	"voxly/pkg/model"
 
@@ -24,6 +25,7 @@ type Processor struct {
 	s3         *storage.S3Storage
 	speechkit  *speechkit.Client
 	bot        *tele.Bot
+	cache      cache.Cache
 	httpClient *http.Client
 }
 
@@ -33,12 +35,14 @@ func NewProcessor(
 	s3 *storage.S3Storage,
 	speechkitClient *speechkit.Client,
 	bot *tele.Bot,
+	redisCache cache.Cache,
 ) *Processor {
 	return &Processor{
 		db:        db,
 		s3:        s3,
 		speechkit: speechkitClient,
 		bot:       bot,
+		cache:     redisCache,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -141,6 +145,18 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		logger.Error("Failed to save transcript", zap.Error(err))
 	}
 
+	// Cache transcript for fast retrieval (TTL: 7 days)
+	transcriptKey := cache.TranscriptCacheKey(task.ID)
+	if err := p.cache.SetWithTTL(ctx, transcriptKey, transcript, 7*24*time.Hour); err != nil {
+		logger.Error("Failed to cache transcript", zap.Error(err))
+	}
+
+	// Cache task status
+	taskKey := cache.TaskCacheKey(task.ID)
+	if err := p.cache.SetWithTTL(ctx, taskKey, task, 7*24*time.Hour); err != nil {
+		logger.Error("Failed to cache task", zap.Error(err))
+	}
+
 	// Update task status to done
 	task.SetCompleted()
 	if err := p.db.UpdateTask(ctx, task); err != nil {
@@ -189,7 +205,6 @@ func (p *Processor) downloadTelegramFile(fileID string) ([]byte, error) {
 // sendResultToUser sends recognition result back to user
 func (p *Processor) sendResultToUser(chatID, replyToMessageID int64, text string) error {
 	chat := &tele.Chat{ID: chatID}
-	
 
 	_, err := p.bot.Send(chat, text, &tele.SendOptions{
 		ReplyTo: &tele.Message{ID: int(replyToMessageID)},

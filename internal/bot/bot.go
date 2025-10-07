@@ -1,11 +1,12 @@
 package bot
 
 import (
-	"sync"
+	"context"
 	"time"
 	"voxly/internal/config"
 	"voxly/internal/queue"
 	"voxly/internal/storage"
+	"voxly/pkg/cache"
 	"voxly/pkg/logger"
 
 	tele "gopkg.in/telebot.v4"
@@ -23,13 +24,10 @@ type Bot struct {
 	tb      *tele.Bot
 	q       QueuePublisher
 	storage *storage.PostgresStorage
-
-	// Состояние активности для каждого чата
-	activeChatsMu sync.RWMutex
-	activeChats   map[int64]bool // chat_id -> is_active
+	cache   cache.Cache
 }
 
-func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher) (*Bot, error) {
+func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher, redisCache cache.Cache) (*Bot, error) {
 	logger.Info("Starting bot initialization")
 
 	pref := tele.Settings{
@@ -53,11 +51,11 @@ func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher) (
 	logger.Info("Bot created successfully")
 
 	bot := &Bot{
-		cfg:         cfg,
-		tb:          tb,
-		storage:     db,
-		q:           q,
-		activeChats: make(map[int64]bool),
+		cfg:     cfg,
+		tb:      tb,
+		storage: db,
+		q:       q,
+		cache:   redisCache,
 	}
 
 	bot.registerHandlers()
@@ -73,10 +71,13 @@ func (b *Bot) registerHandlers() {
 // handleStart включает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStart(c tele.Context) error {
 	chatID := c.Chat().ID
+	ctx := context.Background()
 
-	b.activeChatsMu.Lock()
-	b.activeChats[chatID] = true
-	b.activeChatsMu.Unlock()
+	// Сохраняем в Redis с TTL 30 дней
+	key := cache.ChatActiveCacheKey(chatID)
+	if err := b.cache.SetWithTTL(ctx, key, "true", 30*24*time.Hour); err != nil {
+		logger.Error("Failed to save chat active state to cache", zap.Error(err))
+	}
 
 	logger.Info("Bot activated for chat",
 		zap.Int64("chat_id", chatID))
@@ -87,10 +88,13 @@ func (b *Bot) handleStart(c tele.Context) error {
 // handleStop выключает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStop(c tele.Context) error {
 	chatID := c.Chat().ID
+	ctx := context.Background()
 
-	b.activeChatsMu.Lock()
-	b.activeChats[chatID] = false
-	b.activeChatsMu.Unlock()
+	// Удаляем из Redis
+	key := cache.ChatActiveCacheKey(chatID)
+	if err := b.cache.Delete(ctx, key); err != nil {
+		logger.Error("Failed to delete chat active state from cache", zap.Error(err))
+	}
 
 	logger.Info("Bot deactivated for chat",
 		zap.Int64("chat_id", chatID))
@@ -100,12 +104,18 @@ func (b *Bot) handleStop(c tele.Context) error {
 
 // isActive проверяет, активен ли бот для данного чата
 func (b *Bot) isActive(chatID int64) bool {
-	b.activeChatsMu.RLock()
-	defer b.activeChatsMu.RUnlock()
+	ctx := context.Background()
+	key := cache.ChatActiveCacheKey(chatID)
 
-	active, exists := b.activeChats[chatID]
-	// По умолчанию бот неактивен, пока не получит /start
-	return exists && active
+	var value string
+	err := b.cache.Get(ctx, key, &value)
+	if err != nil {
+		// Ключ не найден или ошибка - бот неактивен
+		return false
+	}
+
+	// Проверяем значение
+	return value == "true"
 }
 
 func (b *Bot) Start() {

@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 	"voxly/internal/bot"
 	"voxly/internal/config"
 	"voxly/internal/queue"
 	"voxly/internal/storage"
+	"voxly/pkg/cache"
 	"voxly/pkg/logger"
 
 	"github.com/joho/godotenv"
@@ -72,6 +74,21 @@ func main() {
 
 	logger.Info("Database connection established")
 
+	// Initialize Redis cache
+	redisCache, err := cache.NewRedisCache(
+		cfg.Redis.Addr,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+		24*time.Hour, // Default TTL 24 hours
+	)
+	if err != nil {
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
+		return
+	}
+	defer redisCache.Close()
+
+	logger.Info("Redis cache connection established")
+
 	// Connect to RabbitMQ
 	rabbitMQ, err := queue.NewRabbitMQ(cfg.RabbitMQ.URL)
 	if err != nil {
@@ -82,8 +99,8 @@ func main() {
 
 	logger.Info("RabbitMQ connection established")
 
-	// Initialize bot with database and queue
-	botInstance, err := bot.NewBot(cfg, db, rabbitMQ)
+	// Initialize bot with database, queue, and cache
+	botInstance, err := bot.NewBot(cfg, db, rabbitMQ, redisCache)
 	if err != nil {
 		logger.Fatal("Failed to initialize bot", zap.Error(err))
 		return

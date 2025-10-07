@@ -11,6 +11,7 @@ import (
 	"voxly/internal/speechkit"
 	"voxly/internal/storage"
 	"voxly/internal/worker"
+	"voxly/pkg/cache"
 	"voxly/pkg/logger"
 
 	"github.com/joho/godotenv"
@@ -89,6 +90,21 @@ func main() {
 
 	logger.Info("Telegram bot initialized")
 
+	// Initialize Redis cache
+	redisCache, err := cache.NewRedisCache(
+		cfg.Redis.Addr,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+		24*time.Hour, // Default TTL 24 hours
+	)
+	if err != nil {
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
+		return
+	}
+	defer redisCache.Close()
+
+	logger.Info("Redis cache connection established")
+
 	// Connect to RabbitMQ
 	rabbitMQ, err := queue.NewRabbitMQ(cfg.RabbitMQ.URL)
 	if err != nil {
@@ -99,8 +115,8 @@ func main() {
 
 	logger.Info("RabbitMQ connection established")
 
-	// Create processor
-	processor := worker.NewProcessor(db, s3Storage, speechkitClient, bot)
+	// Create processor with cache
+	processor := worker.NewProcessor(db, s3Storage, speechkitClient, bot, redisCache)
 
 	// Graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

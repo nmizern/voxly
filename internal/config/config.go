@@ -32,6 +32,12 @@ type Config struct {
 		Bucket    string `yaml:"bucket" env:"S3_BUCKET"`
 	} `yaml:"s3"`
 
+	Redis struct {
+		Addr     string `yaml:"addr" env:"REDIS_ADDR" env-default:"localhost:6379"`
+		Password string `yaml:"password" env:"REDIS_PASSWORD" env-default:""`
+		DB       int    `yaml:"db" env:"REDIS_DB" env-default:"0"`
+	} `yaml:"redis"`
+
 	Worker struct {
 		Concurrency string `yaml:"concurrency" env:"WORKER_CONCURRENCY" env-default:"4"`
 	} `yaml:"worker"`

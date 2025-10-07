@@ -73,61 +73,107 @@ func (m *MockQueue) Close() error {
 	return args.Error(0)
 }
 
+// MockCache mocks RedisCache
+type MockCache struct {
+	mock.Mock
+	data map[string]interface{}
+}
+
+func NewMockCache() *MockCache {
+	return &MockCache{
+		data: make(map[string]interface{}),
+	}
+}
+
+func (m *MockCache) Get(ctx context.Context, key string, dest interface{}) error {
+	args := m.Called(ctx, key, dest)
+	return args.Error(0)
+}
+
+func (m *MockCache) Set(ctx context.Context, key string, value interface{}) error {
+	args := m.Called(ctx, key, value)
+	return args.Error(0)
+}
+
+func (m *MockCache) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	args := m.Called(ctx, key, value, ttl)
+	if args.Error(0) == nil {
+		m.data[key] = value
+	}
+	return args.Error(0)
+}
+
+func (m *MockCache) Delete(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	if args.Error(0) == nil {
+		delete(m.data, key)
+	}
+	return args.Error(0)
+}
+
+func (m *MockCache) Exists(ctx context.Context, key string) (bool, error) {
+	args := m.Called(ctx, key)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockCache) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func TestBot_IsActive(t *testing.T) {
 	tests := []struct {
 		name     string
 		chatID   int64
-		setup    func(*Bot)
+		setup    func(*MockCache)
 		expected bool
 	}{
 		{
 			name:   "chat is active",
 			chatID: 123,
-			setup: func(b *Bot) {
-				b.activeChats[123] = true
+			setup: func(mc *MockCache) {
+				mc.On("Get", mock.Anything, "chat:active:123", mock.Anything).
+					Run(func(args mock.Arguments) {
+						dest := args.Get(2).(*string)
+						*dest = "true"
+					}).
+					Return(nil)
 			},
 			expected: true,
 		},
 		{
-			name:   "chat is inactive",
+			name:   "chat is inactive (key not found)",
 			chatID: 456,
-			setup: func(b *Bot) {
-				b.activeChats[456] = false
+			setup: func(mc *MockCache) {
+				mc.On("Get", mock.Anything, "chat:active:456", mock.Anything).
+					Return(errors.New("key not found"))
 			},
 			expected: false,
 		},
 		{
-			name:     "chat not in map",
-			chatID:   789,
-			setup:    func(b *Bot) {},
+			name:   "chat not in cache",
+			chatID: 789,
+			setup: func(mc *MockCache) {
+				mc.On("Get", mock.Anything, "chat:active:789", mock.Anything).
+					Return(errors.New("cache miss"))
+			},
 			expected: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mockCache := NewMockCache()
+			tt.setup(mockCache)
+
 			b := &Bot{
-				activeChats: make(map[int64]bool),
+				cache: mockCache,
 			}
-			tt.setup(b)
+
 			result := b.isActive(tt.chatID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestBot_SetActive(t *testing.T) {
-	b := &Bot{
-		activeChats: make(map[int64]bool),
-	}
-
-	chatID := int64(123)
-
-	b.activeChats[chatID] = true
-	assert.True(t, b.isActive(chatID))
-
-	b.activeChats[chatID] = false
-	assert.False(t, b.isActive(chatID))
 }
 
 func TestTask_SetInProgress(t *testing.T) {
