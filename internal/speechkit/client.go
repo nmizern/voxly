@@ -2,12 +2,14 @@ package speechkit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 	"voxly/pkg/logger"
+	"voxly/pkg/resilience"
 
 	"go.uber.org/zap"
 )
@@ -20,9 +22,11 @@ const (
 )
 
 type Client struct {
-	apiKey   string
-	folderID string
-	client   *http.Client
+	apiKey         string
+	folderID       string
+	client         *http.Client
+	circuitBreaker *resilience.CircuitBreaker
+	rateLimiter    *resilience.RateLimiter
 }
 
 // New Yandex SpeechKit client
@@ -33,68 +37,86 @@ func NewClient(apiKey, folderID string) *Client {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		circuitBreaker: resilience.NewCircuitBreaker(5, 1*time.Minute),
+		rateLimiter:    resilience.NewRateLimiter(10, 1*time.Second),
 	}
 }
 
 // Async voice recognition
 func (c *Client) StartRecognition(s3URI string) (string, error) {
-	reqBody := RecognitionRequest{
-		Config: RecognitionConfig{
-			Specification: Specification{
-				LanguageCode:      "ru-RU",
-				Model:             "general:rc",
-				AudioEncoding:     "OGG_OPUS",
-				SampleRateHertz:   48000,
-				AudioChannelCount: 1,
-				ProfanityFilter:   false,
-				LiteratureText:    true,
-				RawResults:        false,
+	ctx := context.Background()
+
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	var operationID string
+	err := c.circuitBreaker.Execute(func() error {
+		reqBody := RecognitionRequest{
+			Config: RecognitionConfig{
+				Specification: Specification{
+					LanguageCode:      "ru-RU",
+					Model:             "general:rc",
+					AudioEncoding:     "OGG_OPUS",
+					SampleRateHertz:   48000,
+					AudioChannelCount: 1,
+					ProfanityFilter:   false,
+					LiteratureText:    true,
+					RawResults:        false,
+				},
 			},
-		},
-		Audio: AudioSource{
-			URI: s3URI,
-		},
-	}
+			Audio: AudioSource{
+				URI: s3URI,
+			},
+		}
 
-	body, err := json.Marshal(reqBody)
+		body, err := json.Marshal(reqBody)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", RecognizeURL, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Api-Key %s", c.apiKey))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-folder-id", c.folderID)
+
+		logger.Debug("Starting speech recognition", zap.String("s3_uri", s3URI))
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("recognition request failed: status=%d, body=%s", resp.StatusCode, string(respBody))
+		}
+
+		var opResp OperationResponse
+		if err := json.Unmarshal(respBody, &opResp); err != nil {
+			return fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		operationID = opResp.ID
+		logger.Info("Recognition started", zap.String("operation_id", opResp.ID))
+
+		return nil
+	})
+
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", err
 	}
 
-	req, err := http.NewRequest("POST", RecognizeURL, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Api-Key %s", c.apiKey))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-folder-id", c.folderID)
-
-	logger.Debug("Starting speech recognition", zap.String("s3_uri", s3URI))
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("recognition request failed: status=%d, body=%s", resp.StatusCode, string(respBody))
-	}
-
-	var opResp OperationResponse
-	if err := json.Unmarshal(respBody, &opResp); err != nil {
-		return "", fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	logger.Info("Recognition started", zap.String("operation_id", opResp.ID))
-
-	return opResp.ID, nil
+	return operationID, nil
 }
 
 // Polling operation status and returns result

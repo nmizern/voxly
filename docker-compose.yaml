@@ -40,6 +40,23 @@ services:
     networks:
       - voxly-network
 
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    container_name: voxly-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - voxly-network
+    command: redis-server --appendonly yes
+
   # Voxly Bot Service
   bot:
     build:
@@ -55,6 +72,11 @@ services:
       
       # RabbitMQ
       RABBITMQ_URL: "amqp://voxly:voxly_password@rabbitmq:5672/"
+      
+      # Redis
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
       
       # Yandex Cloud
       YANDEX_API_KEY: "${YANDEX_API_KEY}"
@@ -92,6 +114,11 @@ services:
       # RabbitMQ
       RABBITMQ_URL: "amqp://voxly:voxly_password@rabbitmq:5672/"
       
+      # Redis
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      
       # Yandex Cloud
       YANDEX_API_KEY: "${YANDEX_API_KEY}"
       YANDEX_FOLDER_ID: "${YANDEX_FOLDER_ID}"
@@ -120,6 +147,8 @@ volumes:
   postgres_data:
     driver: local
   rabbitmq_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
