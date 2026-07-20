@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,18 +20,18 @@ import (
 )
 
 func main() {
-	if err := logger.Init(true); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		os.Exit(1)
+	}
+
+	if err := logger.Init(cfg.Observability.LogLevel, cfg.Observability.LogFormat); err != nil {
 		panic("Failed to init logger: " + err.Error())
 	}
 	defer logger.Sync()
 
 	logger.Info("Starting voxly worker service")
-
-	cfg, err := config.Load()
-	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
-		return
-	}
 
 	db, err := storage.NewPostgresStorage(cfg.Database.DSN)
 	if err != nil {

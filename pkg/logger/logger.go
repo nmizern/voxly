@@ -2,21 +2,26 @@ package logger
 
 import (
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var Logger *zap.Logger
 
-// Init initializes the global logger
-func Init(debug bool) error {
-	var config zap.Config
-
-	if debug {
-		config = zap.NewDevelopmentConfig()
-	} else {
-		config = zap.NewProductionConfig()
+// Init builds the global logger. format is "json" or "console"; level is one
+// of debug/info/warn/error and falls back to info if unrecognised.
+func Init(level, format string) error {
+	cfg := zap.NewProductionConfig()
+	if format == "console" {
+		cfg = zap.NewDevelopmentConfig()
 	}
 
-	logger, err := config.Build()
+	lvl, err := zapcore.ParseLevel(level)
+	if err != nil {
+		lvl = zapcore.InfoLevel
+	}
+	cfg.Level = zap.NewAtomicLevelAt(lvl)
+
+	logger, err := cfg.Build()
 	if err != nil {
 		return err
 	}

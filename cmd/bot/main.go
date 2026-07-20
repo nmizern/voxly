@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,18 +22,18 @@ func main() {
 	resetDB := flag.Bool("reset-db", false, "Drop all tables and re-run migrations")
 	flag.Parse()
 
-	if err := logger.Init(true); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		os.Exit(1)
+	}
+
+	if err := logger.Init(cfg.Observability.LogLevel, cfg.Observability.LogFormat); err != nil {
 		panic("Failed to init logger: " + err.Error())
 	}
 	defer logger.Sync()
 
 	logger.Info("Starting voxly bot service")
-
-	cfg, err := config.Load()
-	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
-		return
-	}
 
 	if *resetDB {
 		logger.Info("Resetting database...")
