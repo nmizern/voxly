@@ -39,20 +39,20 @@ docker-compose up -d
 
 ## Configuration
 
-Required environment variables in `.env`:
+Configuration is env-first: every value can be set through an environment
+variable, optionally overlaid on `configs/config.yaml` for non-secret defaults.
+Copy `.env.example` to `.env` and fill in the secrets for your setup.
 
-```env
-TELEGRAM_BOT_TOKEN=your_token
-DATABASE_URL=postgresql://voxly_user:password@localhost:5432/voxly
-RABBITMQ_URL=amqp://voxly:password@localhost:5672/
-YANDEX_API_KEY=your_key
-YANDEX_FOLDER_ID=your_folder
-S3_ENDPOINT=https://storage.yandexcloud.net
-S3_ACCESS_KEY=your_access_key
-S3_SECRET_KEY=your_secret_key
-S3_BUCKET=voxly-audio
-REDIS_ADDR=localhost:6379
-```
+Two things drive the rest of the config:
+
+- `VOXLY_MODE` — `scale` (bot + worker behind RabbitMQ/Redis/Postgres) or
+  `lite` (single process, in-memory infra). Infra drivers are derived from the
+  mode unless set explicitly.
+- `STT_PROVIDER` — `yandex`, `openai`, `groq`, `deepgram` or `whisper`. Only the
+  selected provider's credentials are required; validation reports anything
+  missing on startup.
+
+See `.env.example` for the full list of variables.
 
 ## Architecture
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,38 +15,29 @@ import (
 	"voxly/pkg/cache"
 	"voxly/pkg/logger"
 
-	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
 func main() {
-	// Load .env file first
-	_ = godotenv.Load()
-
-	// Parse command line flags
-	resetDB := flag.Bool("reset-db", false, "Reset database by dropping all tables and re-running migrations")
+	resetDB := flag.Bool("reset-db", false, "Drop all tables and re-run migrations")
 	flag.Parse()
 
-	// Initialize the logger first
-	debug := true // or false, depending on your needs
-	if err := logger.Init(debug); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		os.Exit(1)
+	}
+
+	if err := logger.Init(cfg.Observability.LogLevel, cfg.Observability.LogFormat); err != nil {
 		panic("Failed to init logger: " + err.Error())
 	}
 	defer logger.Sync()
 
 	logger.Info("Starting voxly bot service")
 
-	// Get database URL
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		logger.Fatal("DATABASE_URL environment variable is required")
-		return
-	}
-
-	// Reset database if flag is provided
 	if *resetDB {
 		logger.Info("Resetting database...")
-		if err := storage.ResetMigrations(databaseURL); err != nil {
+		if err := storage.ResetMigrations(cfg.Database.DSN); err != nil {
 			logger.Fatal("Failed to reset database", zap.Error(err))
 			return
 		}
@@ -53,33 +45,21 @@ func main() {
 		return
 	}
 
-	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Load configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
-		return
-	}
-
-	// Initialize database connection
-	db, err := storage.NewPostgresStorage(databaseURL)
+	db, err := storage.NewPostgresStorage(cfg.Database.DSN)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 		return
 	}
 	defer db.Close()
 
-	logger.Info("Database connection established")
-
-	// Initialize Redis cache
 	redisCache, err := cache.NewRedisCache(
-		cfg.Redis.Addr,
-		cfg.Redis.Password,
-		cfg.Redis.DB,
-		24*time.Hour, // Default TTL 24 hours
+		cfg.Cache.Redis.Addr,
+		cfg.Cache.Redis.Password,
+		cfg.Cache.Redis.DB,
+		24*time.Hour,
 	)
 	if err != nil {
 		logger.Fatal("Failed to connect to Redis", zap.Error(err))
@@ -87,30 +67,22 @@ func main() {
 	}
 	defer redisCache.Close()
 
-	logger.Info("Redis cache connection established")
-
-	// Connect to RabbitMQ
-	rabbitMQ, err := queue.NewRabbitMQ(cfg.RabbitMQ.URL)
+	rabbitMQ, err := queue.NewRabbitMQ(cfg.Queue.RabbitMQ.URL)
 	if err != nil {
 		logger.Fatal("Failed to connect to RabbitMQ", zap.Error(err))
 		return
 	}
 	defer rabbitMQ.Close()
 
-	logger.Info("RabbitMQ connection established")
-
-	// Initialize bot with database, queue, and cache
 	botInstance, err := bot.NewBot(cfg, db, rabbitMQ, redisCache)
 	if err != nil {
 		logger.Fatal("Failed to initialize bot", zap.Error(err))
 		return
 	}
 
-	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start bot in a goroutine
 	go func() {
 		logger.Info("Starting Telegram bot")
 		botInstance.Start()
@@ -123,7 +95,6 @@ func main() {
 		logger.Info("Context cancelled")
 	}
 
-	// Graceful shutdown
 	cancel()
 	botInstance.Stop()
 
