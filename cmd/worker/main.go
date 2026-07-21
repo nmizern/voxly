@@ -9,8 +9,8 @@ import (
 	"time"
 	"voxly/internal/config"
 	"voxly/internal/queue"
-	"voxly/internal/speechkit"
 	"voxly/internal/storage"
+	"voxly/internal/stt"
 	"voxly/internal/worker"
 	"voxly/pkg/cache"
 	"voxly/pkg/logger"
@@ -40,18 +40,27 @@ func main() {
 	}
 	defer db.Close()
 
-	s3Storage, err := storage.NewS3Storage(
-		cfg.Storage.S3.Endpoint,
-		cfg.Storage.S3.AccessKey,
-		cfg.Storage.S3.SecretKey,
-		cfg.Storage.S3.Bucket,
-	)
-	if err != nil {
-		logger.Fatal("Failed to initialize S3 storage", zap.Error(err))
-		return
+	// Object storage is only needed by URI-based providers (Yandex).
+	var store stt.ObjectStore
+	if cfg.STT.Provider == config.ProviderYandex {
+		s3Storage, err := storage.NewS3Storage(
+			cfg.Storage.S3.Endpoint,
+			cfg.Storage.S3.AccessKey,
+			cfg.Storage.S3.SecretKey,
+			cfg.Storage.S3.Bucket,
+		)
+		if err != nil {
+			logger.Fatal("Failed to initialize S3 storage", zap.Error(err))
+			return
+		}
+		store = s3Storage
 	}
 
-	speechkitClient := speechkit.NewClient(cfg.STT.Yandex.APIKey, cfg.STT.Yandex.FolderID)
+	transcriber, err := stt.New(cfg, store)
+	if err != nil {
+		logger.Fatal("Failed to initialize transcriber", zap.Error(err))
+		return
+	}
 
 	tb, err := tele.NewBot(tele.Settings{
 		Token:  cfg.Telegram.Token,
@@ -81,7 +90,7 @@ func main() {
 	}
 	defer rabbitMQ.Close()
 
-	processor := worker.NewProcessor(db, s3Storage, speechkitClient, tb, redisCache)
+	processor := worker.NewProcessor(db, transcriber, tb, redisCache)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
