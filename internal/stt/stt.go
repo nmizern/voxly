@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 )
 
 // Audio is a single piece of audio to transcribe. Filename carries the
@@ -26,4 +27,12 @@ type Result struct {
 type Transcriber interface {
 	Transcribe(ctx context.Context, a Audio) (*Result, error)
 	Name() string
+}
+
+// primaryLang reduces a BCP-47 tag to its primary subtag ("ru-RU" -> "ru").
+func primaryLang(code string) string {
+	if i := strings.IndexByte(code, '-'); i > 0 {
+		return code[:i]
+	}
+	return code
 }
