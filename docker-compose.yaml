@@ -89,7 +89,8 @@ services:
       S3_BUCKET: "${S3_BUCKET}"
       
       # App settings
-      DEBUG: "true"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,7 +131,8 @@ services:
       S3_BUCKET: "${S3_BUCKET}"
       
       # App settings
-      DEBUG: "true"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
     depends_on:
       postgres:
         condition: service_healthy

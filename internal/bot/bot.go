@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"voxly/internal/config"
 	"voxly/internal/queue"
@@ -37,15 +38,9 @@ func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher, r
 		},
 	}
 
-	if pref.Token == "" {
-		logger.Fatal("TELEGRAM_BOT_TOKEN environment variable is required")
-		return nil, nil
-	}
-
 	tb, err := tele.NewBot(pref)
 	if err != nil {
-		logger.Fatal("Failed to create bot", zap.Error(err))
-		return nil, err
+		return nil, fmt.Errorf("create telegram bot: %w", err)
 	}
 
 	logger.Info("Bot created successfully")
