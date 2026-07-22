@@ -71,6 +71,8 @@ Telegram → bot → queue → worker → STT provider → reply
 
 The STT provider is an interface. Yandex stages audio in object storage and recognises by URI; OpenAI, Groq, Deepgram and Whisper receive the audio directly (no S3).
 
+Voice messages, video notes (кружочки) and anything forwarded to the bot in a private chat are transcribed. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
+
 **Resilience**: circuit breaker, exponential backoff, rate limiting.
 
 ## Development

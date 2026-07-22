@@ -38,6 +38,7 @@ func (b *Bot) registerHandlers() {
 	b.tb.Handle("/start", b.handleStart)
 	b.tb.Handle("/stop", b.handleStop)
 	b.tb.Handle(tele.OnVoice, b.handleVoice)
+	b.tb.Handle(tele.OnVideoNote, b.handleVideoNote)
 }
 
 // handleStart включает обработку голосовых сообщений для данного чата
