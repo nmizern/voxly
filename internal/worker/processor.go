@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"voxly/internal/media"
 	"voxly/internal/queue"
 	"voxly/internal/storage"
 	"voxly/internal/stt"
@@ -68,10 +69,25 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		return err
 	}
 
+	audioData := fileData
+	filename := "voice" + extForMIME(vt.MimeType)
+	mime := vt.MimeType
+
+	if vt.Kind == "video_note" {
+		extracted, err := media.ExtractAudio(ctx, fileData)
+		if err != nil {
+			p.handleTaskError(ctx, task, fmt.Sprintf("extract audio: %v", err))
+			return err
+		}
+		audioData = extracted
+		filename = "video.ogg"
+		mime = "audio/ogg"
+	}
+
 	result, err := p.transcriber.Transcribe(ctx, stt.Audio{
-		Data:     bytes.NewReader(fileData),
-		Filename: "voice" + extForMIME(vt.MimeType),
-		MIME:     vt.MimeType,
+		Data:     bytes.NewReader(audioData),
+		Filename: filename,
+		MIME:     mime,
 		Duration: vt.Duration,
 	})
 	if err != nil {

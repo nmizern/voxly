@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o voxly ./cmd/voxly
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata ffmpeg
 WORKDIR /app
 
 COPY --from=builder /app/voxly .
