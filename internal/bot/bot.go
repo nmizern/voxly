@@ -15,20 +15,15 @@ import (
 	"go.uber.org/zap"
 )
 
-type QueuePublisher interface {
-	Publish(queueName string, body []byte) error
-	PublishTask(task *queue.VoiceTask) error
-}
-
 type Bot struct {
 	cfg     *config.Config
 	tb      *tele.Bot
-	q       QueuePublisher
+	q       queue.Publisher
 	storage *storage.PostgresStorage
 	cache   cache.Cache
 }
 
-func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher, redisCache cache.Cache) (*Bot, error) {
+func NewBot(cfg *config.Config, db *storage.PostgresStorage, q queue.Publisher, redisCache cache.Cache) (*Bot, error) {
 	logger.Info("Starting bot initialization")
 
 	pref := tele.Settings{
