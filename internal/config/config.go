@@ -30,7 +30,8 @@ const (
 )
 
 type Config struct {
-	Mode Mode `yaml:"mode" env:"VOXLY_MODE" env-default:"scale"`
+	Mode Mode   `yaml:"mode" env:"VOXLY_MODE" env-default:"scale"`
+	Role string `yaml:"role" env:"VOXLY_ROLE" env-default:"all"` // all | bot | worker
 
 	Telegram      Telegram      `yaml:"telegram"`
 	STT           STT           `yaml:"stt"`
@@ -182,6 +183,9 @@ func (c *Config) applyDefaults() {
 	if c.Mode == "" {
 		c.Mode = ModeScale
 	}
+	if c.Role == "" {
+		c.Role = "all"
+	}
 	if c.Queue.Driver == "" {
 		c.Queue.Driver = pick(c.Mode, "memory", "rabbitmq")
 	}
@@ -189,7 +193,7 @@ func (c *Config) applyDefaults() {
 		c.Cache.Driver = pick(c.Mode, "memory", "redis")
 	}
 	if c.Database.Driver == "" {
-		c.Database.Driver = pick(c.Mode, "sqlite", "postgres")
+		c.Database.Driver = pick(c.Mode, "memory", "postgres")
 	}
 }
 
@@ -250,14 +254,20 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.Database.Driver {
-	case "postgres", "sqlite":
-		require(c.Database.DSN != "", fmt.Sprintf("database.dsn (DATABASE_URL) is required for the %s driver", c.Database.Driver))
-	case "none":
+	case "postgres":
+		require(c.Database.DSN != "", "database.dsn (DATABASE_URL) is required for the postgres driver")
+	case "memory":
 	default:
 		errs = append(errs, fmt.Sprintf("database.driver: unknown driver %q", c.Database.Driver))
 	}
 
 	require(c.Worker.Concurrency > 0, "worker.concurrency must be greater than 0")
+
+	switch c.Role {
+	case "all", "bot", "worker":
+	default:
+		errs = append(errs, fmt.Sprintf("role: must be \"all\", \"bot\" or \"worker\", got %q", c.Role))
+	}
 
 	switch c.Access.Mode {
 	case "open", "allowlist":

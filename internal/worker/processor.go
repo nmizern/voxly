@@ -22,19 +22,19 @@ import (
 )
 
 type Processor struct {
-	db          *storage.PostgresStorage
+	store       storage.Store
 	transcriber stt.Transcriber
 	bot         *tele.Bot
 	cache       cache.Cache
 	httpClient  *http.Client
 }
 
-func NewProcessor(db *storage.PostgresStorage, transcriber stt.Transcriber, bot *tele.Bot, redisCache cache.Cache) *Processor {
+func NewProcessor(store storage.Store, transcriber stt.Transcriber, bot *tele.Bot, c cache.Cache) *Processor {
 	return &Processor{
-		db:          db,
+		store:       store,
 		transcriber: transcriber,
 		bot:         bot,
-		cache:       redisCache,
+		cache:       c,
 		httpClient:  &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -51,14 +51,14 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 
 	ctx := context.Background()
 
-	task, err := p.db.GetTaskByID(ctx, vt.TaskID)
+	task, err := p.store.GetTaskByID(ctx, vt.TaskID)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
 
 	task.Status = model.TaskStatusInProgress
 	task.UpdatedAt = time.Now()
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to mark task in progress", zap.Error(err))
 	}
 
@@ -96,7 +96,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		RawResponse: result.Raw,
 		CreatedAt:   time.Now(),
 	}
-	if err := p.db.CreateTranscript(ctx, transcript); err != nil {
+	if err := p.store.CreateTranscript(ctx, transcript); err != nil {
 		logger.Error("Failed to save transcript", zap.Error(err))
 	}
 
@@ -105,7 +105,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 	}
 
 	task.SetCompleted()
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to mark task done", zap.Error(err))
 	}
 
@@ -154,7 +154,7 @@ func (p *Processor) handleTaskError(ctx context.Context, task *model.Task, error
 	task.SetError(errorMsg)
 	task.IncrementAttempts()
 
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to update task error", zap.Error(err))
 	}
 

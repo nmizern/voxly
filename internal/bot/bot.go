@@ -2,7 +2,6 @@ package bot
 
 import (
 	"context"
-	"fmt"
 	"time"
 	"voxly/internal/config"
 	"voxly/internal/queue"
@@ -16,40 +15,23 @@ import (
 )
 
 type Bot struct {
-	cfg     *config.Config
-	tb      *tele.Bot
-	q       queue.Publisher
-	storage *storage.PostgresStorage
-	cache   cache.Cache
+	cfg   *config.Config
+	tb    *tele.Bot
+	q     queue.Publisher
+	store storage.Store
+	cache cache.Cache
 }
 
-func NewBot(cfg *config.Config, db *storage.PostgresStorage, q queue.Publisher, redisCache cache.Cache) (*Bot, error) {
-	logger.Info("Starting bot initialization")
-
-	pref := tele.Settings{
-		Token: cfg.Telegram.Token,
-		Poller: &tele.LongPoller{
-			Timeout: 10 * time.Second,
-		},
+func NewBot(cfg *config.Config, tb *tele.Bot, store storage.Store, q queue.Publisher, c cache.Cache) *Bot {
+	b := &Bot{
+		cfg:   cfg,
+		tb:    tb,
+		q:     q,
+		store: store,
+		cache: c,
 	}
-
-	tb, err := tele.NewBot(pref)
-	if err != nil {
-		return nil, fmt.Errorf("create telegram bot: %w", err)
-	}
-
-	logger.Info("Bot created successfully")
-
-	bot := &Bot{
-		cfg:     cfg,
-		tb:      tb,
-		storage: db,
-		q:       q,
-		cache:   redisCache,
-	}
-
-	bot.registerHandlers()
-	return bot, nil
+	b.registerHandlers()
+	return b
 }
 
 func (b *Bot) registerHandlers() {

@@ -1,13 +1,12 @@
 ﻿# Voxly
 
-Telegram bot for voice message transcription using Yandex SpeechKit.
+Self-hosted Telegram bot that transcribes voice and video messages to text. Pick your speech-to-text provider (Yandex, OpenAI, Groq, Deepgram or a self-hosted Whisper) and run it your way: a single binary for personal use, or a scalable split setup for busy chats.
 
 ## Overview
 
-Bot that converts Telegram voice messages to text with Redis caching, RabbitMQ queue, and resilience patterns (circuit breaker, retry, rate limiting).
+Forward a voice or video message to the bot, or add it to a chat, and it replies with the transcription. Self-hosting keeps your audio between your own server and the STT provider you choose, no extra middlemen.
 
-**Stack**: Go 1.23, PostgreSQL, Redis, RabbitMQ, Yandex SpeechKit, Yandex Object Storage (S3), Docker
-
+**Stack**: Go 1.23, pluggable STT providers, optional PostgreSQL / Redis / RabbitMQ / S3, Docker.
 
 ## Quick Start
 
@@ -15,27 +14,31 @@ Bot that converts Telegram voice messages to text with Redis caching, RabbitMQ q
 
 - Docker & Docker Compose
 - Telegram Bot Token ([@BotFather](https://t.me/BotFather))
-- Yandex Cloud Account with API key
+- An API key for one STT provider (or a self-hosted Whisper server)
 
-### Setup
+### Lite (single process, no infrastructure)
 
-1. Clone and configure:
+Best for personal use. No Postgres/Redis/RabbitMQ needed.
+
 ```bash
 git clone https://github.com/nmizern/voxly.git
 cd voxly
 cp .env.example .env
-# Edit .env with your credentials
+# Set TELEGRAM_BOT_TOKEN, STT_PROVIDER and that provider's key
+docker compose -f docker-compose.lite.yaml up -d --build
 ```
 
-2. Start services:
+### Scale (bot + worker behind RabbitMQ/Redis/Postgres)
+
+Best for busy multi-user chats.
+
 ```bash
-docker-compose up -d
+cp .env.example .env
+# Fill in credentials
+docker compose up -d --build
 ```
 
-3. Test bot in Telegram:
-   - Send `/start` to activate
-   - Send voice message
-   - Receive transcription
+Then in Telegram: send `/start`, then a voice or video message.
 
 ## Configuration
 
@@ -56,81 +59,62 @@ See `.env.example` for the full list of variables.
 
 ## Architecture
 
+One binary (`voxly`) runs as `bot`, `worker`, or both (`all`), selected by role. The deployment mode wires the infrastructure:
+
+- **lite**: `all` role in one process with an in-memory queue, cache and store. No external services.
+- **scale**: separate `bot` and `worker` processes decoupled by RabbitMQ, with Redis cache and Postgres storage.
+
 ```
-Telegram → Bot (Go) → RabbitMQ → Worker (Go) → Yandex SpeechKit
-                ↓                      ↓              ↓
-            PostgreSQL ←──────── Redis Cache    Yandex S3
+Telegram → bot → queue → worker → STT provider → reply
+                          store / cache
 ```
 
-**Flow**: Voice message → Task creation → Queue → Download → S3 Upload → Recognition → Cache → Response
+The STT provider is an interface. Yandex stages audio in object storage and recognises by URI; OpenAI, Groq, Deepgram and Whisper receive the audio directly (no S3).
 
-**Patterns**: Circuit Breaker, Exponential Backoff, Rate Limiting (10 req/s)
+**Resilience**: circuit breaker, exponential backoff, rate limiting.
 
 ## Development
 
 ### Project Structure
 
 ```
-cmd/
-  bot/main.go              # Bot service entry
-  worker/main.go           # Worker service entry
+cmd/voxly/          # single entrypoint (role-driven)
 internal/
-  bot/                     # Telegram bot logic
-  worker/                  # Background processing
-  speechkit/               # Yandex API client
-  storage/                 # PostgreSQL + S3
-  queue/                   # RabbitMQ
+  app/              # dependency wiring for both modes
+  bot/              # Telegram handlers
+  worker/           # transcription processing
+  stt/              # Transcriber interface + providers
+  storage/          # Store interface (postgres, memory) + S3
+  queue/            # Queue interface (rabbitmq, memory)
+  config/           # typed configuration
 pkg/
-  cache/                   # Redis cache interface
-  resilience/              # Circuit breaker, retry, rate limiter
-  logger/                  # Structured logging
-migrations/                # Database migrations
+  cache/            # Cache interface (redis, memory)
+  resilience/       # circuit breaker, retry, rate limiter
+  logger/           # structured logging
+migrations/         # database migrations
 ```
 
 ### Build & Test
 
 ```bash
-# Build
-go build -o bin/bot ./cmd/bot
-go build -o bin/worker ./cmd/worker
+go build -o bin/voxly ./cmd/voxly
+go test ./...
 
-# Test
-go test -v ./...
-
-# Run locally
-go run ./cmd/bot
-go run ./cmd/worker
+# Run locally (lite)
+VOXLY_MODE=lite STT_PROVIDER=openai OPENAI_API_KEY=... \
+  TELEGRAM_BOT_TOKEN=... go run ./cmd/voxly
 ```
 
 ## Deployment
 
-### Production (Docker Compose)
-
 ```bash
-# On server
-docker compose -f docker-compose.prod.yml up -d --build
+# Scale mode
+docker compose up -d --build
+docker compose logs -f
+docker compose up -d --scale worker=3
 
-# Check status
-docker compose -f docker-compose.prod.yml ps
-
-# View logs
-docker compose -f docker-compose.prod.yml logs -f
-
-# Scale workers
-docker compose -f docker-compose.prod.yml up -d --scale worker=3
-```
-
-### Monitoring
-
-```bash
-# Redis stats
-docker exec voxly-redis redis-cli INFO stats
-
-# PostgreSQL
-docker exec voxly-postgres pg_isready
-
-# RabbitMQ
-docker exec voxly-rabbitmq rabbitmqctl list_queues
+# Lite mode
+docker compose -f docker-compose.lite.yaml up -d --build
 ```
 
 ## License

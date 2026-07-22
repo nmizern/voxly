@@ -1,5 +1,24 @@
+x-voxly-env: &voxly-env
+  VOXLY_MODE: "scale"
+  TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+  DATABASE_URL: "postgres://voxly_user:voxly_password@postgres:5432/voxly?sslmode=disable"
+  RABBITMQ_URL: "amqp://voxly:voxly_password@rabbitmq:5672/"
+  REDIS_ADDR: "redis:6379"
+  STT_PROVIDER: "${STT_PROVIDER:-yandex}"
+  STT_LANGUAGE: "${STT_LANGUAGE:-ru-RU}"
+  YANDEX_API_KEY: "${YANDEX_API_KEY:-}"
+  YANDEX_FOLDER_ID: "${YANDEX_FOLDER_ID:-}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  GROQ_API_KEY: "${GROQ_API_KEY:-}"
+  DEEPGRAM_API_KEY: "${DEEPGRAM_API_KEY:-}"
+  S3_ENDPOINT: "${S3_ENDPOINT:-}"
+  S3_ACCESS_KEY: "${S3_ACCESS_KEY:-}"
+  S3_SECRET_KEY: "${S3_SECRET_KEY:-}"
+  S3_BUCKET: "${S3_BUCKET:-voxly-audio}"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
 services:
-  # PostgreSQL database
   postgres:
     image: postgres:15-alpine
     container_name: voxly-postgres
@@ -11,7 +30,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U voxly_user -d voxly"]
       interval: 30s
@@ -20,7 +38,6 @@ services:
     networks:
       - voxly-network
 
-  # RabbitMQ message broker
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: voxly-rabbitmq
@@ -28,8 +45,8 @@ services:
       RABBITMQ_DEFAULT_USER: voxly
       RABBITMQ_DEFAULT_PASS: voxly_password
     ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -40,10 +57,10 @@ services:
     networks:
       - voxly-network
 
-  # Redis cache
   redis:
     image: redis:7-alpine
     container_name: voxly-redis
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -55,103 +72,49 @@ services:
       retries: 5
     networks:
       - voxly-network
-    command: redis-server --appendonly yes
 
-  # Voxly Bot Service
   bot:
     build:
       context: .
-      dockerfile: docker/Dockerfile.bot
+      dockerfile: docker/Dockerfile
     container_name: voxly-bot
     environment:
-      # Database
-      DATABASE_URL: "postgres://voxly_user:voxly_password@postgres:5432/voxly?sslmode=disable"
-      
-      # Telegram
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
-      
-      # RabbitMQ
-      RABBITMQ_URL: "amqp://voxly:voxly_password@rabbitmq:5672/"
-      
-      # Redis
-      REDIS_ADDR: "redis:6379"
-      REDIS_PASSWORD: ""
-      REDIS_DB: "0"
-      
-      # Yandex Cloud
-      YANDEX_API_KEY: "${YANDEX_API_KEY}"
-      YANDEX_FOLDER_ID: "${YANDEX_FOLDER_ID}"
-      
-      # S3 Storage
-      S3_ENDPOINT: "${S3_ENDPOINT}"
-      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
-      S3_SECRET_KEY: "${S3_SECRET_KEY}"
-      S3_BUCKET: "${S3_BUCKET}"
-      
-      # App settings
-      LOG_LEVEL: "info"
-      LOG_FORMAT: "json"
+      <<: *voxly-env
+      VOXLY_ROLE: "bot"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - voxly-network
-    volumes:
-      - ./configs:/app/configs:ro
 
-  # Voxly Worker Service
   worker:
     build:
       context: .
-      dockerfile: docker/Dockerfile.worker
+      dockerfile: docker/Dockerfile
     container_name: voxly-worker
     environment:
-      # Database
-      DATABASE_URL: "postgres://voxly_user:voxly_password@postgres:5432/voxly?sslmode=disable"
-      
-      # RabbitMQ
-      RABBITMQ_URL: "amqp://voxly:voxly_password@rabbitmq:5672/"
-      
-      # Redis
-      REDIS_ADDR: "redis:6379"
-      REDIS_PASSWORD: ""
-      REDIS_DB: "0"
-      
-      # Yandex Cloud
-      YANDEX_API_KEY: "${YANDEX_API_KEY}"
-      YANDEX_FOLDER_ID: "${YANDEX_FOLDER_ID}"
-      
-      # S3 Storage
-      S3_ENDPOINT: "${S3_ENDPOINT}"
-      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
-      S3_SECRET_KEY: "${S3_SECRET_KEY}"
-      S3_BUCKET: "${S3_BUCKET}"
-      
-      # App settings
-      LOG_LEVEL: "info"
-      LOG_FORMAT: "json"
+      <<: *voxly-env
+      VOXLY_ROLE: "worker"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - voxly-network
-    volumes:
-      - ./configs:/app/configs:ro
-
 
 volumes:
   postgres_data:
-    driver: local
   rabbitmq_data:
-    driver: local
   redis_data:
-    driver: local
 
 networks:
   voxly-network:

@@ -8,6 +8,7 @@
 # explicitly: lite -> in-memory/sqlite, scale -> rabbitmq/redis/postgres.
 
 mode: scale # lite | scale
+role: all # all | bot | worker (scale only, lite always runs all)
 
 stt:
   provider: yandex # yandex | openai | groq | deepgram | whisper

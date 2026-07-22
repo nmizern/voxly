@@ -1,0 +1,18 @@
+services:
+  voxly:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: voxly
+    environment:
+      VOXLY_MODE: "lite"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      STT_PROVIDER: "${STT_PROVIDER:-openai}"
+      STT_LANGUAGE: "${STT_LANGUAGE:-ru-RU}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      DEEPGRAM_API_KEY: "${DEEPGRAM_API_KEY:-}"
+      WHISPER_BASE_URL: "${WHISPER_BASE_URL:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      LOG_FORMAT: "${LOG_FORMAT:-console}"
+    restart: unless-stopped
