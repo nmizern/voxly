@@ -52,7 +52,7 @@ func (b *Bot) handleVoice(c tele.Context) error {
 
 	// Saving task to database
 	ctx := context.Background()
-	if err := b.storage.CreateTask(ctx, &task); err != nil {
+	if err := b.store.CreateTask(ctx, &task); err != nil {
 		logger.Error("Failed to create task in database",
 			zap.Error(err),
 			zap.String("task_id", task.ID))

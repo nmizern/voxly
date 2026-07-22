@@ -3,15 +3,11 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
 COPY . .
-
-# Build the bot binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bot ./cmd/bot
+RUN CGO_ENABLED=0 GOOS=linux go build -o voxly ./cmd/voxly
 
 # Final stage
 FROM alpine:latest
@@ -19,15 +15,11 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 
-# Copy the binary from builder stage
-COPY --from=builder /app/bot .
+COPY --from=builder /app/voxly .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/configs ./configs
 
-# Create a non-root user
 RUN adduser -D -s /bin/sh appuser
 USER appuser
 
-EXPOSE 8080
-
-CMD ["./bot"]
+CMD ["./voxly"]

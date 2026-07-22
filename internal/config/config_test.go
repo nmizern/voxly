@@ -10,7 +10,7 @@ func TestApplyDefaults_DriversFollowMode(t *testing.T) {
 		mode                   Mode
 		queue, cache, database string
 	}{
-		{ModeLite, "memory", "memory", "sqlite"},
+		{ModeLite, "memory", "memory", "memory"},
 		{ModeScale, "rabbitmq", "redis", "postgres"},
 	}
 
@@ -46,7 +46,6 @@ func TestValidate_ValidLiteOpenAI(t *testing.T) {
 		Mode:     ModeLite,
 		Telegram: Telegram{Token: "token"},
 		STT:      STT{Provider: ProviderOpenAI, OpenAI: OpenAISTT{APIKey: "sk-x"}},
-		Database: Database{Driver: "none"},
 		Worker:   Worker{Concurrency: 4},
 		Access:   Access{Mode: "open"},
 	}
@@ -78,7 +77,6 @@ func TestValidate_UnknownProvider(t *testing.T) {
 		Mode:     ModeLite,
 		Telegram: Telegram{Token: "token"},
 		STT:      STT{Provider: "invalid"},
-		Database: Database{Driver: "none"},
 		Worker:   Worker{Concurrency: 1},
 		Access:   Access{Mode: "open"},
 	}
