@@ -48,10 +48,10 @@ Copy `.env.example` to `.env` and fill in the secrets for your setup.
 
 Two things drive the rest of the config:
 
-- `VOXLY_MODE` — `scale` (bot + worker behind RabbitMQ/Redis/Postgres) or
-  `lite` (single process, in-memory infra). Infra drivers are derived from the
+- `VOXLY_MODE`: `scale` (bot + worker behind RabbitMQ/Redis/Postgres) or
+  `lite` (single process, in memory infra). Infra drivers are derived from the
   mode unless set explicitly.
-- `STT_PROVIDER` — `yandex`, `openai`, `groq`, `deepgram` or `whisper`. Only the
+- `STT_PROVIDER`: `yandex`, `openai`, `groq`, `deepgram` or `whisper`. Only the
   selected provider's credentials are required; validation reports anything
   missing on startup.
 
@@ -71,7 +71,7 @@ Telegram → bot → queue → worker → STT provider → reply
 
 The STT provider is an interface. Yandex stages audio in object storage and recognises by URI; OpenAI, Groq, Deepgram and Whisper receive the audio directly (no S3).
 
-Voice messages, video notes (кружочки) and anything forwarded to the bot in a private chat are transcribed. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
+Voice messages, video messages and anything forwarded to the bot in a private chat are transcribed. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
 
 **Resilience**: circuit breaker, exponential backoff, rate limiting. The worker runs a bounded pool of concurrent consumers (`WORKER_CONCURRENCY`).
 
