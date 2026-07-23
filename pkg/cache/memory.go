@@ -78,6 +78,29 @@ func (c *MemoryCache) Exists(_ context.Context, key string) (bool, error) {
 	return ok && !it.expired(), nil
 }
 
+func (c *MemoryCache) Increment(_ context.Context, key string, ttl time.Duration) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var n int64
+	it, ok := c.items[key]
+	if ok && !it.expired() {
+		_ = json.Unmarshal(it.data, &n)
+	}
+	n++
+
+	data, _ := json.Marshal(n)
+	exp := time.Now().Add(ttl)
+	if ok && !it.expired() && !it.expires.IsZero() {
+		exp = it.expires // keep the original window across increments
+	} else if ttl <= 0 {
+		exp = time.Time{}
+	}
+
+	c.items[key] = memoryItem{data: data, expires: exp}
+	return n, nil
+}
+
 func (c *MemoryCache) Close() error {
 	c.once.Do(func() { close(c.stop) })
 	return nil

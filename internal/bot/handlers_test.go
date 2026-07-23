@@ -116,6 +116,11 @@ func (m *MockCache) Exists(ctx context.Context, key string) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockCache) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	args := m.Called(ctx, key, ttl)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockCache) Close() error {
 	args := m.Called()
 	return args.Error(0)
