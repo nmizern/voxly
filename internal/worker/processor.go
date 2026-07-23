@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"voxly/internal/media"
 	"voxly/internal/queue"
 	"voxly/internal/storage"
 	"voxly/internal/stt"
 	"voxly/pkg/cache"
 	"voxly/pkg/logger"
+	"voxly/pkg/metrics"
 	"voxly/pkg/model"
 
 	"github.com/google/uuid"
@@ -22,19 +24,19 @@ import (
 )
 
 type Processor struct {
-	db          *storage.PostgresStorage
+	store       storage.Store
 	transcriber stt.Transcriber
 	bot         *tele.Bot
 	cache       cache.Cache
 	httpClient  *http.Client
 }
 
-func NewProcessor(db *storage.PostgresStorage, transcriber stt.Transcriber, bot *tele.Bot, redisCache cache.Cache) *Processor {
+func NewProcessor(store storage.Store, transcriber stt.Transcriber, bot *tele.Bot, c cache.Cache) *Processor {
 	return &Processor{
-		db:          db,
+		store:       store,
 		transcriber: transcriber,
 		bot:         bot,
-		cache:       redisCache,
+		cache:       c,
 		httpClient:  &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -49,16 +51,23 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		zap.String("task_id", vt.TaskID),
 		zap.Int64("chat_id", vt.ChatID))
 
+	kind := vt.Kind
+	if kind == "" {
+		kind = "voice"
+	}
+	status := "failed"
+	defer func() { metrics.TasksTotal.WithLabelValues(kind, status).Inc() }()
+
 	ctx := context.Background()
 
-	task, err := p.db.GetTaskByID(ctx, vt.TaskID)
+	task, err := p.store.GetTaskByID(ctx, vt.TaskID)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
 
 	task.Status = model.TaskStatusInProgress
 	task.UpdatedAt = time.Now()
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to mark task in progress", zap.Error(err))
 	}
 
@@ -68,16 +77,33 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		return err
 	}
 
+	audioData := fileData
+	filename := "voice" + extForMIME(vt.MimeType)
+	mime := vt.MimeType
+
+	if vt.Kind == "video_note" {
+		extracted, err := media.ExtractAudio(ctx, fileData)
+		if err != nil {
+			p.handleTaskError(ctx, task, fmt.Sprintf("extract audio: %v", err))
+			return err
+		}
+		audioData = extracted
+		filename = "video.ogg"
+		mime = "audio/ogg"
+	}
+
+	start := time.Now()
 	result, err := p.transcriber.Transcribe(ctx, stt.Audio{
-		Data:     bytes.NewReader(fileData),
-		Filename: "voice" + extForMIME(vt.MimeType),
-		MIME:     vt.MimeType,
+		Data:     bytes.NewReader(audioData),
+		Filename: filename,
+		MIME:     mime,
 		Duration: vt.Duration,
 	})
 	if err != nil {
 		p.handleTaskError(ctx, task, fmt.Sprintf("transcribe: %v", err))
 		return err
 	}
+	metrics.TranscriptionSeconds.WithLabelValues(p.transcriber.Name()).Observe(time.Since(start).Seconds())
 
 	text := strings.TrimSpace(result.Text)
 	if text == "" {
@@ -96,7 +122,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		RawResponse: result.Raw,
 		CreatedAt:   time.Now(),
 	}
-	if err := p.db.CreateTranscript(ctx, transcript); err != nil {
+	if err := p.store.CreateTranscript(ctx, transcript); err != nil {
 		logger.Error("Failed to save transcript", zap.Error(err))
 	}
 
@@ -105,7 +131,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 	}
 
 	task.SetCompleted()
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to mark task done", zap.Error(err))
 	}
 
@@ -113,6 +139,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		logger.Error("Failed to send result to user", zap.Error(err))
 	}
 
+	status = "done"
 	logger.Info("Task completed", zap.String("task_id", task.ID))
 	return nil
 }
@@ -154,7 +181,7 @@ func (p *Processor) handleTaskError(ctx context.Context, task *model.Task, error
 	task.SetError(errorMsg)
 	task.IncrementAttempts()
 
-	if err := p.db.UpdateTask(ctx, task); err != nil {
+	if err := p.store.UpdateTask(ctx, task); err != nil {
 		logger.Error("Failed to update task error", zap.Error(err))
 	}
 

@@ -2,7 +2,6 @@ package bot
 
 import (
 	"context"
-	"fmt"
 	"time"
 	"voxly/internal/config"
 	"voxly/internal/queue"
@@ -15,56 +14,38 @@ import (
 	"go.uber.org/zap"
 )
 
-type QueuePublisher interface {
-	Publish(queueName string, body []byte) error
-	PublishTask(task *queue.VoiceTask) error
-}
-
 type Bot struct {
-	cfg     *config.Config
-	tb      *tele.Bot
-	q       QueuePublisher
-	storage *storage.PostgresStorage
-	cache   cache.Cache
+	cfg   *config.Config
+	tb    *tele.Bot
+	q     queue.Publisher
+	store storage.Store
+	cache cache.Cache
 }
 
-func NewBot(cfg *config.Config, db *storage.PostgresStorage, q QueuePublisher, redisCache cache.Cache) (*Bot, error) {
-	logger.Info("Starting bot initialization")
-
-	pref := tele.Settings{
-		Token: cfg.Telegram.Token,
-		Poller: &tele.LongPoller{
-			Timeout: 10 * time.Second,
-		},
+func NewBot(cfg *config.Config, tb *tele.Bot, store storage.Store, q queue.Publisher, c cache.Cache) *Bot {
+	b := &Bot{
+		cfg:   cfg,
+		tb:    tb,
+		q:     q,
+		store: store,
+		cache: c,
 	}
-
-	tb, err := tele.NewBot(pref)
-	if err != nil {
-		return nil, fmt.Errorf("create telegram bot: %w", err)
-	}
-
-	logger.Info("Bot created successfully")
-
-	bot := &Bot{
-		cfg:     cfg,
-		tb:      tb,
-		storage: db,
-		q:       q,
-		cache:   redisCache,
-	}
-
-	bot.registerHandlers()
-	return bot, nil
+	b.registerHandlers()
+	return b
 }
 
 func (b *Bot) registerHandlers() {
 	b.tb.Handle("/start", b.handleStart)
 	b.tb.Handle("/stop", b.handleStop)
 	b.tb.Handle(tele.OnVoice, b.handleVoice)
+	b.tb.Handle(tele.OnVideoNote, b.handleVideoNote)
 }
 
 // handleStart включает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStart(c tele.Context) error {
+	if !b.allowed(c) {
+		return nil
+	}
 	chatID := c.Chat().ID
 	ctx := context.Background()
 
@@ -82,6 +63,9 @@ func (b *Bot) handleStart(c tele.Context) error {
 
 // handleStop выключает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStop(c tele.Context) error {
+	if !b.allowed(c) {
+		return nil
+	}
 	chatID := c.Chat().ID
 	ctx := context.Background()
 
@@ -95,6 +79,33 @@ func (b *Bot) handleStop(c tele.Context) error {
 		zap.Int64("chat_id", chatID))
 
 	return c.Send("Бот остановлен.\nЧтобы возобновить работу, отправьте /start")
+}
+
+// allowed reports whether the sender may use the bot. In "allowlist" mode only
+// admins and listed users/chats pass.
+func (b *Bot) allowed(c tele.Context) bool {
+	if b.cfg.Access.Mode != "allowlist" {
+		return true
+	}
+
+	var userID int64
+	if u := c.Sender(); u != nil {
+		userID = u.ID
+	}
+	if b.cfg.IsAdmin(userID) {
+		return true
+	}
+	for _, id := range b.cfg.Access.AllowedUsers {
+		if id == userID {
+			return true
+		}
+	}
+	for _, id := range b.cfg.Access.AllowedChats {
+		if id == c.Chat().ID {
+			return true
+		}
+	}
+	return false
 }
 
 // isActive проверяет, активен ли бот для данного чата

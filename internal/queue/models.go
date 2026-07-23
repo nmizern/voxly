@@ -8,6 +8,7 @@ type VoiceTask struct {
 	ChatID            int64     `json:"chat_id"`
 	TelegramMessageID int64     `json:"telegram_message_id"`
 	FileID            string    `json:"file_id"`
+	Kind              string    `json:"kind"` // voice | video_note
 	Duration          int       `json:"duration"`
 	FileSize          int64     `json:"file_size"`
 	MimeType          string    `json:"mime_type"`

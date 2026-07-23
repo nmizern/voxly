@@ -122,7 +122,7 @@ func ResetMigrations(databaseURL string) error {
 		return fmt.Errorf("failed to get migrations path: %w", err)
 	}
 
-	// Create file URL from path 
+	// Create file URL from path
 	var migrationsURL string
 	if runtime.GOOS == "windows" {
 		u := &url.URL{
@@ -181,8 +181,9 @@ func parseConfig(databaseURL string) *pgx.ConnConfig {
 }
 
 // Closes the database connection pool
-func (s *PostgresStorage) Close() {
+func (s *PostgresStorage) Close() error {
 	s.pool.Close()
+	return nil
 }
 
 // CreateTask inserts a new task into the database
