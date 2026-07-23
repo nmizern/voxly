@@ -52,6 +52,14 @@ func (b *Bot) enqueue(c tele.Context, m mediaTask) error {
 	msg := c.Message()
 	chat := msg.Chat
 
+	if !b.allowed(c) {
+		logger.Info("Access denied", zap.Int64("chat_id", chat.ID))
+		if chat.Type == tele.ChatPrivate {
+			return c.Reply("У вас нет доступа к этому боту.")
+		}
+		return nil
+	}
+
 	// Private chats are always on, groups require /start.
 	if chat.Type != tele.ChatPrivate && !b.isActive(chat.ID) {
 		logger.Info("Ignoring message from inactive chat",
