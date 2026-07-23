@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 	"voxly/internal/bot"
@@ -13,6 +14,7 @@ import (
 	"voxly/internal/worker"
 	"voxly/pkg/cache"
 	"voxly/pkg/logger"
+	"voxly/pkg/metrics"
 
 	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v4"
@@ -25,6 +27,7 @@ type App struct {
 	queue     queue.Queue
 	store     storage.Store
 	cache     cache.Cache
+	metrics   *http.Server
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -60,6 +63,7 @@ func New(cfg *config.Config) (*App, error) {
 		queue:     q,
 		store:     store,
 		cache:     c,
+		metrics:   &http.Server{Addr: cfg.Observability.MetricsAddr, Handler: metrics.Handler()},
 	}, nil
 }
 
@@ -70,6 +74,13 @@ func (a *App) Run(ctx context.Context) error {
 	if a.cfg.Mode == config.ModeLite {
 		role = "all"
 	}
+
+	go func() {
+		logger.Info("Serving metrics", zap.String("addr", a.metrics.Addr))
+		if err := a.metrics.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Metrics server stopped", zap.Error(err))
+		}
+	}()
 
 	var wg sync.WaitGroup
 
@@ -95,6 +106,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 	logger.Info("Shutting down")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = a.metrics.Shutdown(shutdownCtx)
 
 	if role == "all" || role == "bot" {
 		a.bot.Stop()

@@ -73,7 +73,11 @@ The STT provider is an interface. Yandex stages audio in object storage and reco
 
 Voice messages, video notes (кружочки) and anything forwarded to the bot in a private chat are transcribed. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
 
-**Resilience**: circuit breaker, exponential backoff, rate limiting.
+**Resilience**: circuit breaker, exponential backoff, rate limiting. The worker runs a bounded pool of concurrent consumers (`WORKER_CONCURRENCY`).
+
+**Access**: in `allowlist` mode only listed users/chats and admins are served, with an optional per user daily quota to cap API spend.
+
+**Observability**: Prometheus metrics and a `/healthz` liveness probe are served on `METRICS_ADDR` (`:9090`).
 
 ## Development
 
