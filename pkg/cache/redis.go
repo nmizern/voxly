@@ -117,18 +117,13 @@ func (r *RedisCache) Close() error {
 	return r.client.Close()
 }
 
-func (r *RedisCache) Increment(ctx context.Context, key string) (int64, error) {
+func (r *RedisCache) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
 	val, err := r.client.Incr(ctx, key).Result()
 	if err != nil {
 		return 0, fmt.Errorf("failed to increment: %w", err)
 	}
-	return val, nil
-}
-
-func (r *RedisCache) Decrement(ctx context.Context, key string) (int64, error) {
-	val, err := r.client.Decr(ctx, key).Result()
-	if err != nil {
-		return 0, fmt.Errorf("failed to decrement: %w", err)
+	if val == 1 && ttl > 0 {
+		r.client.Expire(ctx, key, ttl)
 	}
 	return val, nil
 }

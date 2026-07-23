@@ -15,6 +15,7 @@ import (
 	"voxly/internal/stt"
 	"voxly/pkg/cache"
 	"voxly/pkg/logger"
+	"voxly/pkg/metrics"
 	"voxly/pkg/model"
 
 	"github.com/google/uuid"
@@ -50,6 +51,13 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		zap.String("task_id", vt.TaskID),
 		zap.Int64("chat_id", vt.ChatID))
 
+	kind := vt.Kind
+	if kind == "" {
+		kind = "voice"
+	}
+	status := "failed"
+	defer func() { metrics.TasksTotal.WithLabelValues(kind, status).Inc() }()
+
 	ctx := context.Background()
 
 	task, err := p.store.GetTaskByID(ctx, vt.TaskID)
@@ -84,6 +92,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		mime = "audio/ogg"
 	}
 
+	start := time.Now()
 	result, err := p.transcriber.Transcribe(ctx, stt.Audio{
 		Data:     bytes.NewReader(audioData),
 		Filename: filename,
@@ -94,6 +103,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		p.handleTaskError(ctx, task, fmt.Sprintf("transcribe: %v", err))
 		return err
 	}
+	metrics.TranscriptionSeconds.WithLabelValues(p.transcriber.Name()).Observe(time.Since(start).Seconds())
 
 	text := strings.TrimSpace(result.Text)
 	if text == "" {
@@ -129,6 +139,7 @@ func (p *Processor) ProcessTask(taskData []byte) error {
 		logger.Error("Failed to send result to user", zap.Error(err))
 	}
 
+	status = "done"
 	logger.Info("Task completed", zap.String("task_id", task.ID))
 	return nil
 }

@@ -134,10 +134,11 @@ type Worker struct {
 // Access guards a self-hosted bot from unbounded API costs. In "allowlist"
 // mode only the listed users/chats are served; admins are always allowed.
 type Access struct {
-	Mode         string  `yaml:"mode" env:"ACCESS_MODE" env-default:"open"` // open | allowlist
-	AllowedUsers []int64 `yaml:"allowed_user_ids" env:"ACCESS_ALLOWED_USER_IDS"`
-	AllowedChats []int64 `yaml:"allowed_chat_ids" env:"ACCESS_ALLOWED_CHAT_IDS"`
-	AdminIDs     []int64 `yaml:"admin_ids" env:"ACCESS_ADMIN_IDS"`
+	Mode           string  `yaml:"mode" env:"ACCESS_MODE" env-default:"open"` // open | allowlist
+	AllowedUsers   []int64 `yaml:"allowed_user_ids" env:"ACCESS_ALLOWED_USER_IDS"`
+	AllowedChats   []int64 `yaml:"allowed_chat_ids" env:"ACCESS_ALLOWED_CHAT_IDS"`
+	AdminIDs       []int64 `yaml:"admin_ids" env:"ACCESS_ADMIN_IDS"`
+	UserDailyLimit int     `yaml:"user_daily_limit" env:"ACCESS_USER_DAILY_LIMIT" env-default:"0"` // 0 = unlimited
 }
 
 type Observability struct {

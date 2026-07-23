@@ -5,7 +5,7 @@ type Publisher interface {
 }
 
 type Consumer interface {
-	Consume(queueName string, handler func([]byte) error) error
+	Consume(queueName string, concurrency int, handler func([]byte) error) error
 }
 
 type Queue interface {

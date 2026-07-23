@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"voxly/internal/queue"
 	"voxly/pkg/logger"
@@ -18,6 +19,27 @@ type mediaTask struct {
 	duration int
 	fileSize int64
 	mime     string
+}
+
+// withinQuota enforces a per user daily limit. Admins and a zero limit are
+// always allowed; on a cache error it fails open.
+func (b *Bot) withinQuota(c tele.Context) bool {
+	limit := b.cfg.Access.UserDailyLimit
+	if limit <= 0 {
+		return true
+	}
+	u := c.Sender()
+	if u == nil || b.cfg.IsAdmin(u.ID) {
+		return true
+	}
+
+	key := fmt.Sprintf("quota:%d:%s", u.ID, time.Now().UTC().Format("2006-01-02"))
+	n, err := b.cache.Increment(context.Background(), key, 24*time.Hour)
+	if err != nil {
+		logger.Error("Quota check failed", zap.Error(err))
+		return true
+	}
+	return n <= int64(limit)
 }
 
 func (b *Bot) handleVoice(c tele.Context) error {
@@ -52,11 +74,26 @@ func (b *Bot) enqueue(c tele.Context, m mediaTask) error {
 	msg := c.Message()
 	chat := msg.Chat
 
+	if !b.allowed(c) {
+		logger.Info("Access denied", zap.Int64("chat_id", chat.ID))
+		if chat.Type == tele.ChatPrivate {
+			return c.Reply("У вас нет доступа к этому боту.")
+		}
+		return nil
+	}
+
 	// Private chats are always on, groups require /start.
 	if chat.Type != tele.ChatPrivate && !b.isActive(chat.ID) {
 		logger.Info("Ignoring message from inactive chat",
 			zap.Int64("chat_id", chat.ID),
 			zap.Int("message_id", msg.ID))
+		return nil
+	}
+
+	if !b.withinQuota(c) {
+		if chat.Type == tele.ChatPrivate {
+			return c.Reply("Дневной лимит запросов исчерпан, попробуйте завтра.")
+		}
 		return nil
 	}
 

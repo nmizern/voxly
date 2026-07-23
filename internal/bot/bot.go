@@ -43,6 +43,9 @@ func (b *Bot) registerHandlers() {
 
 // handleStart включает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStart(c tele.Context) error {
+	if !b.allowed(c) {
+		return nil
+	}
 	chatID := c.Chat().ID
 	ctx := context.Background()
 
@@ -60,6 +63,9 @@ func (b *Bot) handleStart(c tele.Context) error {
 
 // handleStop выключает обработку голосовых сообщений для данного чата
 func (b *Bot) handleStop(c tele.Context) error {
+	if !b.allowed(c) {
+		return nil
+	}
 	chatID := c.Chat().ID
 	ctx := context.Background()
 
@@ -73,6 +79,33 @@ func (b *Bot) handleStop(c tele.Context) error {
 		zap.Int64("chat_id", chatID))
 
 	return c.Send("Бот остановлен.\nЧтобы возобновить работу, отправьте /start")
+}
+
+// allowed reports whether the sender may use the bot. In "allowlist" mode only
+// admins and listed users/chats pass.
+func (b *Bot) allowed(c tele.Context) bool {
+	if b.cfg.Access.Mode != "allowlist" {
+		return true
+	}
+
+	var userID int64
+	if u := c.Sender(); u != nil {
+		userID = u.ID
+	}
+	if b.cfg.IsAdmin(userID) {
+		return true
+	}
+	for _, id := range b.cfg.Access.AllowedUsers {
+		if id == userID {
+			return true
+		}
+	}
+	for _, id := range b.cfg.Access.AllowedChats {
+		if id == c.Chat().ID {
+			return true
+		}
+	}
+	return false
 }
 
 // isActive проверяет, активен ли бот для данного чата

@@ -22,6 +22,7 @@ access:
   # allowed_user_ids: [111, 222]
   # allowed_chat_ids: [-1001234567890]
   # admin_ids: [111]
+  # user_daily_limit: 0 # per user daily cap, 0 = unlimited
 
 observability:
   log_level: info # debug | info | warn | error

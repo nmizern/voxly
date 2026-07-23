@@ -42,6 +42,19 @@ func TestMemoryCache_Expiry(t *testing.T) {
 	}
 }
 
+func TestMemoryCache_Increment(t *testing.T) {
+	c := NewMemoryCache(time.Minute)
+	defer c.Close()
+	ctx := context.Background()
+
+	if n, _ := c.Increment(ctx, "q", time.Hour); n != 1 {
+		t.Fatalf("first increment = %d, want 1", n)
+	}
+	if n, _ := c.Increment(ctx, "q", time.Hour); n != 2 {
+		t.Fatalf("second increment = %d, want 2", n)
+	}
+}
+
 func TestMemoryCache_Delete(t *testing.T) {
 	c := NewMemoryCache(time.Minute)
 	defer c.Close()
