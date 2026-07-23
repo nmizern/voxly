@@ -86,8 +86,8 @@ func (a *App) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			logger.Info("Starting worker")
-			if err := a.queue.Consume(queue.QueueNameVoiceProcessing, a.processor.ProcessTask); err != nil {
+			logger.Info("Starting worker", zap.Int("concurrency", a.cfg.Worker.Concurrency))
+			if err := a.queue.Consume(queue.QueueNameVoiceProcessing, a.cfg.Worker.Concurrency, a.processor.ProcessTask); err != nil {
 				logger.Error("Worker stopped", zap.Error(err))
 			}
 		}()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 	"voxly/pkg/logger"
 
@@ -129,46 +130,43 @@ func (r *RabbitMQ) PublishTask(task *VoiceTask) error {
 	return r.Publish(QueueNameVoiceProcessing, body)
 }
 
-// Consume starts consuming messages from the queue
-func (r *RabbitMQ) Consume(queueName string, handler func([]byte) error) error {
-	// Set QoS
-	err := r.channel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	)
-	if err != nil {
+// Consume runs `concurrency` workers pulling from the queue in parallel. It
+// blocks until the delivery channel closes (see Close), letting in flight
+// messages finish.
+func (r *RabbitMQ) Consume(queueName string, concurrency int, handler func([]byte) error) error {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
+	if err := r.channel.Qos(concurrency, 0, false); err != nil {
 		return fmt.Errorf("failed to set QoS: %w", err)
 	}
 
-	msgs, err := r.channel.Consume(
-		queueName, // queue
-		"",        // consumer
-		false,     // auto-ack
-		false,     // exclusive
-		false,     // no-local
-		false,     // no-wait
-		nil,       // args
-	)
+	msgs, err := r.channel.Consume(queueName, "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to register consumer: %w", err)
 	}
 
-	logger.Info("Starting to consume messages", zap.String("queue", queueName))
+	logger.Info("Starting to consume messages",
+		zap.String("queue", queueName),
+		zap.Int("concurrency", concurrency))
 
-	for msg := range msgs {
-		logger.Debug("Received message", zap.Int("size", len(msg.Body)))
-
-		err := handler(msg.Body)
-		if err != nil {
-			logger.Error("Failed to handle message", zap.Error(err))
-			// Reject and requeue
-			msg.Nack(false, true)
-		} else {
-			// Acknowledge
-			msg.Ack(false)
-		}
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for msg := range msgs {
+				if err := handler(msg.Body); err != nil {
+					logger.Error("Failed to handle message", zap.Error(err))
+					msg.Nack(false, true)
+				} else {
+					msg.Ack(false)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 
 	return nil
 }

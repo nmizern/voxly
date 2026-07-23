@@ -15,7 +15,7 @@ func TestMemoryQueue_PublishConsume(t *testing.T) {
 	}
 
 	got := make(chan string, 1)
-	go q.Consume("", func(b []byte) error {
+	go q.Consume("", 2, func(b []byte) error {
 		got <- string(b)
 		return nil
 	})
@@ -35,7 +35,7 @@ func TestMemoryQueue_ConsumeStopsOnClose(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		q.Consume("", func([]byte) error { return nil })
+		q.Consume("", 3, func([]byte) error { return nil })
 		close(done)
 	}()
 

@@ -39,17 +39,31 @@ func (m *MemoryQueue) PublishTask(task *VoiceTask) error {
 	}
 }
 
-func (m *MemoryQueue) Consume(_ string, handler func([]byte) error) error {
-	for {
-		select {
-		case body := <-m.ch:
-			if err := handler(body); err != nil {
-				logger.Error("Failed to handle task", zap.Error(err))
-			}
-		case <-m.done:
-			return nil
-		}
+func (m *MemoryQueue) Consume(_ string, concurrency int, handler func([]byte) error) error {
+	if concurrency < 1 {
+		concurrency = 1
 	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case body := <-m.ch:
+					if err := handler(body); err != nil {
+						logger.Error("Failed to handle task", zap.Error(err))
+					}
+				case <-m.done:
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	return nil
 }
 
 func (m *MemoryQueue) Close() error {
