@@ -5,11 +5,13 @@ import (
 	"errors"
 	"testing"
 	"time"
+	"voxly/internal/config"
 	"voxly/internal/queue"
 	"voxly/pkg/model"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	tele "gopkg.in/telebot.v4"
 )
 
 // Mock Storage
@@ -124,6 +126,83 @@ func (m *MockCache) Increment(ctx context.Context, key string, ttl time.Duration
 func (m *MockCache) Close() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func TestMediaFromMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      *tele.Message
+		ok       bool
+		kind     string
+		fileID   string
+		duration int
+		fileSize int64
+		mime     string
+	}{
+		{name: "nil message"},
+		{name: "text message", msg: &tele.Message{Text: "hello"}},
+		{
+			name: "voice",
+			msg: &tele.Message{Voice: &tele.Voice{
+				File:     tele.File{FileID: "voice-1", FileSize: 2048},
+				Duration: 12,
+				MIME:     "audio/ogg",
+			}},
+			ok:       true,
+			kind:     "voice",
+			fileID:   "voice-1",
+			duration: 12,
+			fileSize: 2048,
+			mime:     "audio/ogg",
+		},
+		{
+			name: "video note",
+			msg: &tele.Message{VideoNote: &tele.VideoNote{
+				File:     tele.File{FileID: "note-1", FileSize: 4096},
+				Duration: 8,
+			}},
+			ok:       true,
+			kind:     "video_note",
+			fileID:   "note-1",
+			duration: 8,
+			fileSize: 4096,
+			mime:     "video/mp4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := mediaFromMessage(tt.msg)
+			assert.Equal(t, tt.ok, ok)
+			if !tt.ok {
+				return
+			}
+			assert.Equal(t, tt.kind, got.kind)
+			assert.Equal(t, tt.fileID, got.fileID)
+			assert.Equal(t, tt.duration, got.duration)
+			assert.Equal(t, tt.fileSize, got.fileSize)
+			assert.Equal(t, tt.mime, got.mime)
+		})
+	}
+}
+
+func TestBot_autoEnabled(t *testing.T) {
+	tests := []struct {
+		trigger string
+		want    bool
+	}{
+		{trigger: "auto", want: true},
+		{trigger: "both", want: true},
+		{trigger: "", want: true},
+		{trigger: "command", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.trigger, func(t *testing.T) {
+			b := &Bot{cfg: &config.Config{Telegram: config.Telegram{Trigger: tt.trigger}}}
+			assert.Equal(t, tt.want, b.autoEnabled())
+		})
+	}
 }
 
 func TestBot_IsActive(t *testing.T) {

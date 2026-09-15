@@ -38,7 +38,8 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Then in Telegram: send `/start`, then a voice or video message.
+Then in Telegram: send `/start`. Voice messages are transcribed automatically.
+To transcribe a specific one, reply to it with `/transcribe`.
 
 ## Configuration
 
@@ -54,6 +55,15 @@ Two things drive the rest of the config:
 - `STT_PROVIDER`: `yandex`, `openai`, `groq`, `deepgram` or `whisper`. Only the
   selected provider's credentials are required; validation reports anything
   missing on startup.
+
+`TELEGRAM_TRIGGER` controls when a message is transcribed:
+
+- `both` (default): every voice/video note, plus `/transcribe` as a reply
+- `auto`: only incoming voice/video notes
+- `command`: only `/transcribe` (reply to the message you want decoded)
+
+In groups, auto needs `/start` first. `/transcribe` works without it, which
+is handy when the bot runs with privacy mode on and only sees commands.
 
 See `.env.example` for the full list of variables.
 
@@ -71,7 +81,7 @@ Telegram → bot → queue → worker → STT provider → reply
 
 The STT provider is an interface. Yandex stages audio in object storage and recognises by URI; OpenAI, Groq, Deepgram and Whisper receive the audio directly (no S3).
 
-Voice messages, video messages and anything forwarded to the bot in a private chat are transcribed. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
+Voice messages, video notes and anything forwarded to the bot in a private chat are transcribed. Reply with `/transcribe` to pick a specific one. Video notes have their audio pulled out with ffmpeg, which is bundled in the Docker image (install it yourself for a bare `go run`).
 
 **Resilience**: circuit breaker, exponential backoff, rate limiting. The worker runs a bounded pool of concurrent consumers (`WORKER_CONCURRENCY`).
 

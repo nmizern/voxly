@@ -10,6 +10,9 @@
 mode: scale # lite | scale
 role: all # all | bot | worker (scale only, lite always runs all)
 
+telegram:
+  trigger: both # auto | command | both
+
 stt:
   provider: yandex # yandex | openai | groq | deepgram | whisper
   language: ru-RU

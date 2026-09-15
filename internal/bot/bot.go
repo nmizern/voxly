@@ -37,8 +37,9 @@ func NewBot(cfg *config.Config, tb *tele.Bot, store storage.Store, q queue.Publi
 func (b *Bot) registerHandlers() {
 	b.tb.Handle("/start", b.handleStart)
 	b.tb.Handle("/stop", b.handleStop)
-	b.tb.Handle(tele.OnVoice, b.handleVoice)
-	b.tb.Handle(tele.OnVideoNote, b.handleVideoNote)
+	b.tb.Handle("/transcribe", b.handleTranscribe)
+	b.tb.Handle(tele.OnVoice, b.handleMedia)
+	b.tb.Handle(tele.OnVideoNote, b.handleMedia)
 }
 
 // handleStart включает обработку голосовых сообщений для данного чата
@@ -58,7 +59,10 @@ func (b *Bot) handleStart(c tele.Context) error {
 	logger.Info("Bot activated for chat",
 		zap.Int64("chat_id", chatID))
 
-	return c.Send("Бот запущен!")
+	if b.autoEnabled() {
+		return c.Send("Бот запущен!")
+	}
+	return c.Send("Бот запущен. Ответьте /transcribe на голосовое, чтобы расшифровать.")
 }
 
 // handleStop выключает обработку голосовых сообщений для данного чата
@@ -124,7 +128,20 @@ func (b *Bot) isActive(chatID int64) bool {
 	return value == "true"
 }
 
+func (b *Bot) autoEnabled() bool {
+	return b.cfg.Telegram.Trigger != "command"
+}
+
 func (b *Bot) Start() {
+	cmds := []tele.Command{
+		{Text: "start", Description: "Включить расшифровку в этом чате"},
+		{Text: "stop", Description: "Выключить авторасшифровку в этом чате"},
+		{Text: "transcribe", Description: "Расшифровать голосовое (ответьте на сообщение)"},
+	}
+	if err := b.tb.SetCommands(cmds); err != nil {
+		logger.Error("Failed to register bot commands", zap.Error(err))
+	}
+
 	b.tb.Start()
 	logger.Info("Bot started")
 }
