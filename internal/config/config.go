@@ -45,7 +45,8 @@ type Config struct {
 }
 
 type Telegram struct {
-	Token string `yaml:"token" env:"TELEGRAM_BOT_TOKEN"`
+	Token   string `yaml:"token" env:"TELEGRAM_BOT_TOKEN"`
+	Trigger string `yaml:"trigger" env:"TELEGRAM_TRIGGER" env-default:"both"` // auto | command | both
 }
 
 type STT struct {
@@ -196,6 +197,9 @@ func (c *Config) applyDefaults() {
 	if c.Database.Driver == "" {
 		c.Database.Driver = pick(c.Mode, "memory", "postgres")
 	}
+	if c.Telegram.Trigger == "" {
+		c.Telegram.Trigger = "both"
+	}
 }
 
 func pick(mode Mode, lite, scale string) string {
@@ -217,6 +221,11 @@ func (c *Config) Validate() error {
 	require(c.Mode == ModeLite || c.Mode == ModeScale,
 		fmt.Sprintf("mode: must be %q or %q, got %q", ModeLite, ModeScale, c.Mode))
 	require(c.Telegram.Token != "", "telegram.token (TELEGRAM_BOT_TOKEN) is required")
+	switch c.Telegram.Trigger {
+	case "auto", "command", "both":
+	default:
+		errs = append(errs, fmt.Sprintf("telegram.trigger: must be \"auto\", \"command\" or \"both\", got %q", c.Telegram.Trigger))
+	}
 
 	switch c.STT.Provider {
 	case ProviderYandex:

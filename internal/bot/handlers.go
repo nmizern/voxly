@@ -42,56 +42,78 @@ func (b *Bot) withinQuota(c tele.Context) bool {
 	return n <= int64(limit)
 }
 
-func (b *Bot) handleVoice(c tele.Context) error {
-	msg := c.Message()
-	if msg == nil || msg.Voice == nil {
-		return c.Reply("Ошибка: голосовое сообщение не найдено")
+func mediaFromMessage(msg *tele.Message) (mediaTask, bool) {
+	if msg == nil {
+		return mediaTask{}, false
 	}
-	return b.enqueue(c, mediaTask{
-		fileID:   msg.Voice.FileID,
-		kind:     "voice",
-		duration: msg.Voice.Duration,
-		fileSize: int64(msg.Voice.FileSize),
-		mime:     msg.Voice.MIME,
-	})
+	if msg.Voice != nil {
+		return mediaTask{
+			fileID:   msg.Voice.FileID,
+			kind:     "voice",
+			duration: msg.Voice.Duration,
+			fileSize: int64(msg.Voice.FileSize),
+			mime:     msg.Voice.MIME,
+		}, true
+	}
+	if msg.VideoNote != nil {
+		return mediaTask{
+			fileID:   msg.VideoNote.FileID,
+			kind:     "video_note",
+			duration: msg.VideoNote.Duration,
+			fileSize: int64(msg.VideoNote.FileSize),
+			mime:     "video/mp4",
+		}, true
+	}
+	return mediaTask{}, false
 }
 
-func (b *Bot) handleVideoNote(c tele.Context) error {
-	msg := c.Message()
-	if msg == nil || msg.VideoNote == nil {
-		return c.Reply("Ошибка: видеосообщение не найдено")
+func (b *Bot) handleMedia(c tele.Context) error {
+	if !b.autoEnabled() {
+		return nil
 	}
-	return b.enqueue(c, mediaTask{
-		fileID:   msg.VideoNote.FileID,
-		kind:     "video_note",
-		duration: msg.VideoNote.Duration,
-		fileSize: int64(msg.VideoNote.FileSize),
-		mime:     "video/mp4",
-	})
+	m, ok := mediaFromMessage(c.Message())
+	if !ok {
+		return nil
+	}
+	return b.enqueue(c, c.Message(), m, false)
 }
 
-func (b *Bot) enqueue(c tele.Context, m mediaTask) error {
+func (b *Bot) handleTranscribe(c tele.Context) error {
 	msg := c.Message()
-	chat := msg.Chat
+	if msg == nil || msg.ReplyTo == nil {
+		return c.Reply("Ответьте этой командой на голосовое или видеосообщение")
+	}
+	m, ok := mediaFromMessage(msg.ReplyTo)
+	if !ok {
+		return c.Reply("Это не голосовое и не видеосообщение")
+	}
+	return b.enqueue(c, msg.ReplyTo, m, true)
+}
+
+func (b *Bot) enqueue(c tele.Context, src *tele.Message, m mediaTask, explicit bool) error {
+	chat := c.Chat()
+	if chat == nil || src == nil {
+		return nil
+	}
 
 	if !b.allowed(c) {
 		logger.Info("Access denied", zap.Int64("chat_id", chat.ID))
-		if chat.Type == tele.ChatPrivate {
+		if explicit || chat.Type == tele.ChatPrivate {
 			return c.Reply("У вас нет доступа к этому боту.")
 		}
 		return nil
 	}
 
-	// Private chats are always on, groups require /start.
-	if chat.Type != tele.ChatPrivate && !b.isActive(chat.ID) {
+	// Auto in groups only after /start. /transcribe is always on.
+	if !explicit && chat.Type != tele.ChatPrivate && !b.isActive(chat.ID) {
 		logger.Info("Ignoring message from inactive chat",
 			zap.Int64("chat_id", chat.ID),
-			zap.Int("message_id", msg.ID))
+			zap.Int("message_id", src.ID))
 		return nil
 	}
 
 	if !b.withinQuota(c) {
-		if chat.Type == tele.ChatPrivate {
+		if explicit || chat.Type == tele.ChatPrivate {
 			return c.Reply("Дневной лимит запросов исчерпан, попробуйте завтра.")
 		}
 		return nil
@@ -103,7 +125,7 @@ func (b *Bot) enqueue(c tele.Context, m mediaTask) error {
 
 	task := model.Task{
 		ID:                uuid.New().String(),
-		TelegramMessageID: int64(msg.ID),
+		TelegramMessageID: int64(src.ID),
 		ChatID:            chat.ID,
 		FileID:            m.fileID,
 		Status:            model.TaskStatusQueued,

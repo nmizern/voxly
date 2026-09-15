@@ -72,6 +72,29 @@ func TestValidate_ReportsAllMissing(t *testing.T) {
 	}
 }
 
+func TestApplyDefaults_Trigger(t *testing.T) {
+	c := &Config{Mode: ModeLite}
+	c.applyDefaults()
+	if c.Telegram.Trigger != "both" {
+		t.Errorf("trigger = %q, want both", c.Telegram.Trigger)
+	}
+}
+
+func TestValidate_UnknownTrigger(t *testing.T) {
+	c := &Config{
+		Mode:     ModeLite,
+		Telegram: Telegram{Token: "token", Trigger: "inline"},
+		STT:      STT{Provider: ProviderOpenAI, OpenAI: OpenAISTT{APIKey: "sk-x"}},
+		Worker:   Worker{Concurrency: 1},
+		Access:   Access{Mode: "open"},
+	}
+	c.applyDefaults()
+
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "telegram.trigger") {
+		t.Fatalf("expected trigger error, got: %v", err)
+	}
+}
+
 func TestValidate_UnknownProvider(t *testing.T) {
 	c := &Config{
 		Mode:     ModeLite,

@@ -10,11 +10,16 @@ chats.
 
 ## How it works
 
-1. A user sends or forwards a voice message or video note.
+1. A user sends or forwards a voice message or video note, or replies to one
+   with `/transcribe`.
 2. The bot creates a task and publishes it to the queue.
 3. A worker consumes the task, downloads the file, extracts audio from video
    notes with ffmpeg, and sends it to the configured STT provider.
 4. The worker stores the transcript and replies to the original message.
+
+`TELEGRAM_TRIGGER` (`auto` | `command` | `both`) picks whether incoming
+media is transcribed automatically, only via `/transcribe`, or both.
+In groups auto still needs `/start`; `/transcribe` does not.
 
 ## Deployment modes
 
