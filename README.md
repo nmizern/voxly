@@ -132,9 +132,3 @@ docker compose up -d --scale worker=3
 # Lite mode
 docker compose -f docker-compose.lite.yaml up -d --build
 ```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file.
-
----
